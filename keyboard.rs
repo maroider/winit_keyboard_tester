@@ -20,9 +20,20 @@ const PKL: usize = if EXPECT_UNIDENTIFIED { 37 } else { 20 };
 const LKL: usize = if EXPECT_UNIDENTIFIED { 42 } else { 25 };
 
 macro_rules! print_table_line {
-    ($event_number:expr, $kind:expr, $is_synthetic:expr, $state:expr, $physical_key:expr, $logical_key:expr, $location:expr, $text:expr $(,)?) => {
+    (
+        $event_number:expr,
+        $kind:expr,
+        $is_synthetic:expr,
+        $state:expr,
+        $physical_key:expr,
+        $logical_key:expr,
+        $location:expr,
+        $text:expr,
+        $modifiers:expr
+        $(,)?
+    ) => {
         println!(
-            "| {:<6} | {:<6} | {:<5} | {:<8} | {:<pkl$} | {:<lkl$} | {:<8} | {:<16} |",
+            "| {:<6} | {:<6} | {:<5} | {:<8} | {:<pkl$} | {:<lkl$} | {:<8} | {:<16} | {:<26} |",
             $event_number,
             $kind,
             $is_synthetic,
@@ -31,6 +42,7 @@ macro_rules! print_table_line {
             $logical_key,
             $location,
             $text,
+            $modifiers,
             pkl = PKL,
             lkl = LKL,
         );
@@ -51,10 +63,12 @@ fn main() {
 
     let mut event_number = 0u16;
 
-    let mut table_header_printed = false;
+    // let mut table_header_printed = false;
     let mut pressed_count = 0i32;
 
     let mut manual_mode = false;
+
+    begin_new_table();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -85,6 +99,7 @@ fn main() {
                         key_to_string(event.logical_key),
                         format!("{:?}", event.location),
                         format!("{:?}", event.text),
+                        "",
                     );
 
                     event_number += 1;
@@ -99,13 +114,14 @@ fn main() {
                 event: DeviceEvent::Key(event),
                 ..
             } => {
-                if focused {
+                if focused || pressed_count > 0 {
                     print_table_line!(
                         event_number,
                         "Device",
                         "",
                         format!("{:?}", event.state),
                         key_code_to_string(event.physical_key),
+                        "",
                         "",
                         "",
                         "",
@@ -120,6 +136,23 @@ fn main() {
                 }
             }
             Event::WindowEvent {
+                event: WindowEvent::ModifiersChanged(modifiers),
+                ..
+            } => {
+                print_table_line!(
+                    event_number,
+                    "ModC",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    format!("{:?}", modifiers).replace("|", ""),
+                );
+                event_number += 1;
+            }
+            Event::WindowEvent {
                 event: WindowEvent::ReceivedImeText(text),
                 ..
             } => {
@@ -132,6 +165,7 @@ fn main() {
                     "",
                     "",
                     format!("{:?}", text),
+                    "",
                 );
 
                 event_number += 1;
@@ -146,19 +180,19 @@ fn main() {
                 ..
             } => {
                 if manual_mode {
-                    if table_header_printed {
+                    if event_number == 0 {
                         manual_mode = false;
                     } else {
                         begin_new_table();
                         event_number = 0;
-                        table_header_printed = true;
+                        // table_header_printed = true;
                         pressed_count = 0;
                     }
                 } else {
-                    if pressed_count != 0 {
-                        pressed_count = 0;
-                    } else {
+                    if event_number == 0 {
                         manual_mode = true;
+                    } else {
+                        pressed_count = 0;
                     }
                 }
             }
@@ -180,19 +214,12 @@ fn main() {
             _ => (),
         }
 
-        if manual_mode {
-            if pressed_count != 0 {
-                table_header_printed = false;
-            }
-        } else {
+        if !manual_mode {
             if pressed_count == 0 {
-                if !table_header_printed {
+                if event_number != 0 {
                     begin_new_table();
                     event_number = 0;
-                    table_header_printed = true;
                 }
-            } else {
-                table_header_printed = false;
             }
         }
     });
@@ -201,14 +228,14 @@ fn main() {
 fn begin_new_table() {
     println!();
     println!(
-        "| Number | Kind   | Synth | State    | KeyCode{: <pkl$} | Key{: <lkl$} | Location | Text             |",
+        "| Number | Kind   | Synth | State    | KeyCode{: <pkl$} | Key{: <lkl$} | Location | Text             | Modifiers                  |",
         "",
         "",
         pkl = PKL - 7,
         lkl = LKL - 3,
     );
     println!(
-        "| ------ | ------ | ----- | -------- | {:-<pkl$} | {:-<lkl$} | -------- | ---------------- |",
+        "| ------ | ------ | ----- | -------- | {:-<pkl$} | {:-<lkl$} | -------- | ---------------- | -------------------------- |",
         "-",
         "-",
         pkl = PKL,
