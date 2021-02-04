@@ -60,12 +60,8 @@ fn main() {
         .unwrap();
 
     let mut focused = true;
-
     let mut event_number = 0u16;
-
-    // let mut table_header_printed = false;
     let mut pressed_count = 0i32;
-
     let mut manual_mode = false;
 
     begin_new_table();
@@ -114,7 +110,7 @@ fn main() {
                 event: DeviceEvent::Key(event),
                 ..
             } => {
-                if focused || pressed_count > 0 {
+                if !event.repeat && (focused || pressed_count > 0) {
                     print_table_line!(
                         event_number,
                         "Device",
@@ -139,18 +135,20 @@ fn main() {
                 event: WindowEvent::ModifiersChanged(modifiers),
                 ..
             } => {
-                print_table_line!(
-                    event_number,
-                    "ModC",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    format!("{:?}", modifiers).replace("|", ""),
-                );
-                event_number += 1;
+                if event_number != 0 {
+                    print_table_line!(
+                        event_number,
+                        "ModC",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        format!("{:?}", modifiers).replace("|", ""),
+                    );
+                    event_number += 1;
+                }
             }
             Event::WindowEvent {
                 event: WindowEvent::ReceivedImeText(text),
@@ -185,7 +183,6 @@ fn main() {
                     } else {
                         begin_new_table();
                         event_number = 0;
-                        // table_header_printed = true;
                         pressed_count = 0;
                     }
                 } else {
