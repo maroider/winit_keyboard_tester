@@ -61,7 +61,7 @@ fn main() {
             header: column::KEY_CODE.to_string()     , normal_width: 20, extended_width: 37, use_extended_width: false, enabled: true,
         });
         table.add_column(TableColumn {
-            header: column::KEY.to_string()          , normal_width: 25, extended_width: 42, use_extended_width: false, enabled: true,
+            header: column::KEY.to_string()          , normal_width: 25, extended_width: 42, use_extended_width: true , enabled: true,
         });
         table.add_column(TableColumn {
             header: column::LOCATION.to_string()     , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
@@ -120,7 +120,9 @@ fn main() {
                         .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key))
                         .column_with(column::KEY, || key_to_string(event.logical_key))
                         .column_with(column::LOCATION, || format!("{:?}", event.location))
-                        .column_with(column::TEXT, || format!("{:?}", event.text.unwrap_or("")))
+                        .column_with(column::TEXT, || {
+                            event.text.map(nice_text).unwrap_or_else(|| "".to_string())
+                        })
                         .column_with(column::KEY_NO_MOD, || key_without_modifiers(&event))
                         .column_with(column::TEXT_ALL_MODS, || text_with_all_modifiers(&event))
                         .print();
@@ -289,7 +291,7 @@ fn text_with_all_modifiers(event: &KeyEvent) -> String {
     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
     event
         .text_with_all_modifers()
-        .map(|text| format!("{:?}", text))
+        .map(nice_text)
         .unwrap_or_else(String::new)
 }
 
@@ -301,6 +303,14 @@ fn text_with_all_modifiers(event: &KeyEvent) -> &'static str {
 #[cfg(arch = "wasm32")]
 fn text_with_all_modifiers(event: &KeyEvent) -> &'static str {
     ""
+}
+
+fn nice_text(text: &str) -> String {
+    if text.chars().any(|c| c.is_control()) {
+        format!("{:?}", text)
+    } else {
+        text.to_string()
+    }
 }
 
 struct TableLinePrinter<'a> {
