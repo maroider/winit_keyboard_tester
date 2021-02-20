@@ -290,7 +290,7 @@ fn key_without_modifiers(event: &KeyEvent) -> &'static str {
 fn text_with_all_modifiers(event: &KeyEvent) -> String {
     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
     event
-        .text_with_all_modifers()
+        .text_with_all_modifiers()
         .map(nice_text)
         .unwrap_or_else(String::new)
 }
