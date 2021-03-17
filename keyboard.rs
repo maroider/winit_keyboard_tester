@@ -9,7 +9,6 @@
 
 use std::collections::HashMap;
 
-use simple_logger::SimpleLogger;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -17,6 +16,7 @@ use winit::{
     window::WindowBuilder,
 };
 
+#[allow(dead_code)]
 mod column {
     pub const NUMBER: &str = "Number";
     pub const KIND: &str = "Kind";
@@ -32,8 +32,21 @@ mod column {
     pub const SCAN_CODE: &str = "Scancode";
 }
 
+#[cfg(feature = "web-sys")]
+mod wasm {
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen(start)]
+    pub fn run() {
+        console_log::init_with_level(log::Level::Debug).unwrap();
+
+        super::main();
+    }
+}
+
 fn main() {
-    SimpleLogger::new().init().unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
+    simple_logger::SimpleLogger::new().init().unwrap();
     let event_loop = EventLoop::new();
 
     let base_window_title = "A fantastic window!";
@@ -72,24 +85,46 @@ fn main() {
         table.add_column(TableColumn {
             header: column::MODIFIERS.to_string()    , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
         });
+        #[cfg(not(target_arch = "wasm32"))]
         table.add_column(TableColumn {
             header: column::KEY_NO_MOD.to_string()   , normal_width: 25, extended_width: 42, use_extended_width: false, enabled: true,
         });
+        #[cfg(not(target_arch = "wasm32"))]
         table.add_column(TableColumn {
             header: column::TEXT_ALL_MODS.to_string(), normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
         });
+        #[cfg(not(target_arch = "wasm32"))]
         table.add_column(TableColumn {
             header: column::SCAN_CODE.to_string()    , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: false,
         });
         table
     };
 
+    #[cfg(feature = "web-sys")]
+    let mut table_printer = {
+        use winit::platform::web::WindowExtWebSys;
+
+        let canvas = window.canvas();
+
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let body = document.body().unwrap();
+
+        body.append_child(&canvas)
+            .expect("Append canvas to HTML body");
+
+        HtmlTablePrinter::new(document, &body, &table)
+    };
+
+    #[cfg(not(feature = "web-sys"))]
+    let mut table_printer = StdoutTablePrinter::new();
+
     let mut focused = true;
     let mut event_number = 0u16;
     let mut pressed_count = 0i32;
     let mut manual_mode = false;
 
-    table.print_headers();
+    table_printer.begin_new_table(&table);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -125,7 +160,7 @@ fn main() {
                         })
                         .column_with(column::KEY_NO_MOD, || key_without_modifiers(&event))
                         .column_with(column::TEXT_ALL_MODS, || text_with_all_modifiers(&event))
-                        .print();
+                        .print(&mut table_printer);
 
                     event_number += 1;
 
@@ -146,7 +181,7 @@ fn main() {
                         .column(column::KIND, "Device")
                         .column_with(column::STATE, || format!("{:?}", event.state))
                         .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key))
-                        .print();
+                        .print(&mut table_printer);
 
                     event_number += 1;
 
@@ -168,7 +203,7 @@ fn main() {
                         .column_with(column::MODIFIERS, || {
                             format!("{:?}", modifiers).replace("|", "")
                         })
-                        .print();
+                        .print(&mut table_printer);
 
                     event_number += 1;
                 }
@@ -182,7 +217,7 @@ fn main() {
                     .column(column::NUMBER, event_number)
                     .column(column::KIND, "IME")
                     .column_with(column::TEXT, || format!("{:?}", text))
-                    .print();
+                    .print(&mut table_printer);
 
                 event_number += 1;
             }
@@ -199,7 +234,7 @@ fn main() {
                     if event_number == 0 {
                         manual_mode = false;
                     } else {
-                        table.print_headers();
+                        table_printer.begin_new_table(&table);
                         event_number = 0;
                         pressed_count = 0;
                     }
@@ -232,7 +267,7 @@ fn main() {
         if !manual_mode {
             if pressed_count == 0 {
                 if event_number != 0 {
-                    table.print_headers();
+                    table_printer.begin_new_table(&table);
                     event_number = 0;
                 }
             }
@@ -275,18 +310,18 @@ fn native_key_code_to_string(native_key_code: NativeKeyCode) -> String {
     }
 }
 
-#[cfg(not(arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn key_without_modifiers(event: &KeyEvent) -> String {
     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
     format!("{:?}", event.key_without_modifiers())
 }
 
-#[cfg(arch = "wasm32")]
-fn key_without_modifiers(event: &KeyEvent) -> &'static str {
+#[cfg(target_arch = "wasm32")]
+fn key_without_modifiers(_: &KeyEvent) -> &'static str {
     ""
 }
 
-#[cfg(not(arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn text_with_all_modifiers(event: &KeyEvent) -> String {
     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
     event
@@ -295,13 +330,8 @@ fn text_with_all_modifiers(event: &KeyEvent) -> String {
         .unwrap_or_else(String::new)
 }
 
-#[cfg(arch = "wasm32")]
-fn text_with_all_modifiers(event: &KeyEvent) -> &'static str {
-    ""
-}
-
-#[cfg(arch = "wasm32")]
-fn text_with_all_modifiers(event: &KeyEvent) -> &'static str {
+#[cfg(target_arch = "wasm32")]
+fn text_with_all_modifiers(_: &KeyEvent) -> &'static str {
     ""
 }
 
@@ -313,12 +343,51 @@ fn nice_text(text: &str) -> String {
     }
 }
 
-struct TableLinePrinter<'a> {
+struct Table {
+    columns: Vec<TableColumn>,
+}
+
+impl Table {
+    fn new() -> Self {
+        Self {
+            columns: Vec::new(),
+        }
+    }
+
+    fn add_column(&mut self, column: TableColumn) {
+        self.columns.push(column);
+    }
+
+    fn print_table_line(&self) -> RowBuilder<'_> {
+        RowBuilder::new(self)
+    }
+}
+
+struct TableColumn {
+    header: String,
+    normal_width: usize,
+    extended_width: usize,
+    use_extended_width: bool,
+    enabled: bool,
+}
+
+impl TableColumn {
+    fn width(&self) -> usize {
+        if self.use_extended_width {
+            self.extended_width
+        } else {
+            self.normal_width
+        }
+        .max(self.header.len())
+    }
+}
+
+struct RowBuilder<'a> {
     table: &'a Table,
     column_values: HashMap<String, String>,
 }
 
-impl<'a> TableLinePrinter<'a> {
+impl<'a> RowBuilder<'a> {
     fn new(table: &'a Table) -> Self {
         Self {
             table,
@@ -352,61 +421,190 @@ impl<'a> TableLinePrinter<'a> {
         self
     }
 
-    fn print(self) {
-        use std::io::{self, Write as _};
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
-
-        for column in self.table.columns.iter() {
-            if !column.enabled {
-                continue;
-            }
-            write!(
-                &mut stdout,
-                "| {:<length$} ",
-                self.column_values
-                    .get(&column.header)
-                    .map(AsRef::as_ref)
-                    .unwrap_or(""),
-                length = column.width(),
-            )
-            .unwrap();
-        }
-        writeln!(&mut stdout, "|").unwrap();
-
-        stdout.flush().unwrap();
+    fn print<P: TablePrinter>(self, printer: &mut P) {
+        printer.print_row(self)
     }
 }
 
-struct Table {
-    columns: Vec<TableColumn>,
+trait TablePrinter {
+    fn begin_new_table(&mut self, table: &Table);
+
+    fn print_row(&mut self, row: RowBuilder<'_>);
 }
 
-impl Table {
+#[cfg(not(target_arch = "wasm32"))]
+struct StdoutTablePrinter {
+    ioprinter: IoWriteTablePrinter,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl StdoutTablePrinter {
     fn new() -> Self {
         Self {
-            columns: Vec::new(),
+            ioprinter: IoWriteTablePrinter::new(),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TablePrinter for StdoutTablePrinter {
+    fn begin_new_table(&mut self, table: &Table) {
+        use std::io::{self, Write as _};
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+
+        writeln!(out).unwrap();
+
+        self.ioprinter.begin_new_table(table, &mut out);
+    }
+
+    fn print_row(&mut self, row: RowBuilder<'_>) {
+        use std::io;
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+
+        self.ioprinter.print_row(row, &mut out);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+struct HtmlTablePrinter {
+    document: web_sys::Document,
+    table_container: web_sys::Element,
+    table_element: web_sys::Element,
+    tbody: web_sys::Element,
+    last_table: Option<web_sys::Element>,
+    ioprinter: IoWriteTablePrinter,
+    markdown_table_buffer: Vec<u8>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl HtmlTablePrinter {
+    fn new(document: web_sys::Document, body: &web_sys::HtmlElement, table: &Table) -> Self {
+        let (table_element, tbody) = Self::create_new_table(&document, table);
+        let table_container = document.create_element("div").unwrap();
+        table_container.set_id("table-container");
+        table_container.append_child(&table_element).unwrap();
+        body.append_child(&table_container).unwrap();
+
+        Self {
+            document,
+            table_container,
+            table_element,
+            tbody,
+            last_table: None,
+            ioprinter: IoWriteTablePrinter::new(),
+            markdown_table_buffer: Vec::new(),
         }
     }
 
-    fn add_column(&mut self, column: TableColumn) {
-        self.columns.push(column);
+    fn create_new_table(
+        document: &web_sys::Document,
+        table: &Table,
+    ) -> (web_sys::Element, web_sys::Element) {
+        let table_element = document.create_element("table").unwrap();
+        let thead = document.create_element("thead").unwrap();
+        let header_row = document.create_element("tr").unwrap();
+        for column in table.columns.iter() {
+            let header = document.create_element("th").unwrap();
+            header.set_text_content(Some(&column.header));
+            header_row.append_child(&header).unwrap();
+        }
+        thead.append_child(&header_row).unwrap();
+        table_element.append_child(&thead).unwrap();
+
+        let tbody = document.create_element("tbody").unwrap();
+
+        table_element.append_child(&tbody).unwrap();
+
+        (table_element, tbody)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl TablePrinter for HtmlTablePrinter {
+    fn begin_new_table(&mut self, table: &Table) {
+        let mardown_table = std::str::from_utf8(&self.markdown_table_buffer)
+            .unwrap()
+            .to_string();
+        self.markdown_table_buffer.clear();
+        self.ioprinter
+            .begin_new_table(table, &mut self.markdown_table_buffer);
+
+        // TODO: Don't require this hack, maybe.
+        if self.tbody.child_element_count() == 0 {
+            return;
+        }
+
+        let (new_table, new_tbody) = Self::create_new_table(&self.document, table);
+        self.table_container
+            .replace_child(&new_table, &self.table_element)
+            .unwrap();
+
+        let details = self.document.create_element("details").unwrap();
+        details.set_attribute("open", "").unwrap();
+        let summary = self.document.create_element("summary").unwrap();
+        summary.set_text_content(Some("Event table"));
+        let button = self.document.create_element("button").unwrap();
+        button
+            .set_attribute(
+                "onclick",
+                &format!(r#"navigator.clipboard.writeText(`{}`)"#, mardown_table),
+            )
+            .unwrap();
+        button.set_class_name("copy-to-clipboard");
+        button.set_text_content(Some("Copy to clipboard"));
+        summary.append_child(&button).unwrap();
+        details.append_child(&summary).unwrap();
+        details.append_child(&self.table_element).unwrap();
+        self.table_container
+            .insert_before(&details, self.last_table.as_deref())
+            .unwrap();
+
+        self.table_element = new_table;
+        self.tbody = new_tbody;
+        self.last_table = Some(details);
     }
 
-    fn print_headers(&self) {
-        use std::io::{self, Write as _};
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
+    fn print_row(&mut self, row: RowBuilder<'_>) {
+        let tr = self.document.create_element("tr").unwrap();
+        for column in row.table.columns.iter() {
+            if !column.enabled {
+                continue;
+            }
+            let td = self.document.create_element("td").unwrap();
+            if let Some(value) = row.column_values.get(&column.header) {
+                td.set_text_content(Some(value));
+            }
+            tr.append_child(&td).unwrap();
+        }
+        self.tbody.append_child(&tr).unwrap();
 
-        writeln!(&mut stdout).unwrap();
+        self.ioprinter
+            .print_row(row, &mut self.markdown_table_buffer);
+    }
+}
 
-        for column in self.columns.iter() {
+struct IoWriteTablePrinter {}
+
+impl IoWriteTablePrinter {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl IoWriteTablePrinter {
+    fn begin_new_table<W>(&mut self, table: &Table, out: &mut W)
+    where
+        W: std::io::Write,
+    {
+        for column in table.columns.iter() {
             if !column.enabled {
                 continue;
             }
 
             write!(
-                &mut stdout,
+                out,
                 "| {:<length$} ",
                 column.header,
                 length = column.width(),
@@ -414,9 +612,9 @@ impl Table {
             .unwrap();
         }
 
-        writeln!(&mut stdout, "|").unwrap();
+        writeln!(out, "|").unwrap();
 
-        for column in self.columns.iter() {
+        for column in table.columns.iter() {
             if !column.enabled {
                 continue;
             }
@@ -425,34 +623,35 @@ impl Table {
             for _ in 0..column.width() {
                 buf.push('-');
             }
-            write!(&mut stdout, "| {} ", buf).unwrap();
+            write!(out, "| {} ", buf).unwrap();
         }
 
-        writeln!(&mut stdout, "|").unwrap();
+        writeln!(out, "|").unwrap();
 
-        stdout.flush().unwrap();
+        out.flush().unwrap();
     }
 
-    fn print_table_line<'a>(&'a self) -> TableLinePrinter<'a> {
-        TableLinePrinter::new(self)
-    }
-}
-
-struct TableColumn {
-    header: String,
-    normal_width: usize,
-    extended_width: usize,
-    use_extended_width: bool,
-    enabled: bool,
-}
-
-impl TableColumn {
-    fn width(&self) -> usize {
-        if self.use_extended_width {
-            self.extended_width
-        } else {
-            self.normal_width
+    fn print_row<W>(&mut self, row: RowBuilder<'_>, out: &mut W)
+    where
+        W: std::io::Write,
+    {
+        for column in row.table.columns.iter() {
+            if !column.enabled {
+                continue;
+            }
+            write!(
+                out,
+                "| {:<length$} ",
+                row.column_values
+                    .get(&column.header)
+                    .map(AsRef::as_ref)
+                    .unwrap_or(""),
+                length = column.width(),
+            )
+            .unwrap();
         }
-        .max(self.header.len())
+        writeln!(out, "|").unwrap();
+
+        out.flush().unwrap();
     }
 }
