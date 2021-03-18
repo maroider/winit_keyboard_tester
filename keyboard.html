@@ -1,0 +1,45 @@
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        display: flex;
+        background: linear-gradient(
+          135deg,
+          white 0%,
+          white 49%,
+          black 49%,
+          black 51%,
+          white 51%,
+          white 100%
+        );
+        background-repeat: repeat;
+        background-size: 20px 20px;
+      }
+      canvas {
+        background-color: white;
+      }
+      #table-container {
+        background: #dddddddd;
+        overflow-y: scroll;
+        max-height: 768;
+      }
+      table {
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding-left: 5px;
+        padding-right: 5px;
+        padding-top: 1px;
+        padding-bottom: 1px;
+        border: 1px solid black;
+      }
+    </style>
+  </head>
+  <script type="module">
+    import init from "./keyboard/keyboard.js";
+    init();
+  </script>
+  <body></body>
+</html>
