@@ -122,6 +122,7 @@ fn main() {
     let mut focused = true;
     let mut event_number = 0u16;
     let mut pressed_count = 0i32;
+    let mut modifiers = Default::default();
     let mut manual_mode = false;
 
     table_printer.begin_new_table(&table);
@@ -192,10 +193,11 @@ fn main() {
                 }
             }
             Event::WindowEvent {
-                event: WindowEvent::ModifiersChanged(modifiers),
+                event: WindowEvent::ModifiersChanged(new_modifiers),
                 ..
             } => {
-                if event_number != 0 {
+                modifiers = new_modifiers;
+                if !modifiers.is_empty() || event_number != 0 {
                     table
                         .print_table_line()
                         .column(column::NUMBER, event_number)
@@ -237,12 +239,14 @@ fn main() {
                         table_printer.begin_new_table(&table);
                         event_number = 0;
                         pressed_count = 0;
+                        modifiers = Default::default();
                     }
                 } else {
                     if event_number == 0 {
                         manual_mode = true;
                     } else {
                         pressed_count = 0;
+                        modifiers = Default::default();
                     }
                 }
             }
@@ -265,7 +269,7 @@ fn main() {
         }
 
         if !manual_mode {
-            if pressed_count == 0 {
+            if pressed_count == 0 && modifiers.is_empty() {
                 if event_number != 0 {
                     table_printer.begin_new_table(&table);
                     event_number = 0;
