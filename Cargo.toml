@@ -1,0 +1,14 @@
+[package]
+name = "winit_keyboard_tester"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+simple_logger = "1.11.0"
+winit = { path = "../winit" }
+
+[target.'cfg(not(target_arc = "wasm32"))'.dependencies]
+simple_logger = "1.11.0"
+
+[target.'cfg(target_arc = "wasm32")'.dependencies]
+web-sys = "0.3.49"
