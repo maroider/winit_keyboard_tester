@@ -5,10 +5,18 @@ edition = "2018"
 
 [dependencies]
 simple_logger = "1.11.0"
+glutin = "0.26.0"
 winit = { path = "../winit" }
+takeable-option = "0.4"
 
 [target.'cfg(not(target_arc = "wasm32"))'.dependencies]
 simple_logger = "1.11.0"
 
 [target.'cfg(target_arc = "wasm32")'.dependencies]
 web-sys = "0.3.49"
+
+[patch.crates-io]
+winit = { path = "../winit" }
+
+[build-dependencies]
+gl_generator = "0.14"

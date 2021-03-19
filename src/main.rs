@@ -9,12 +9,15 @@
 
 use std::collections::HashMap;
 
+use glutin::ContextBuilder;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, KeyCode, NativeKeyCode},
     window::WindowBuilder,
 };
+
+mod glutin_support;
 
 #[allow(dead_code)]
 mod column {
@@ -50,10 +53,15 @@ fn main() {
     let event_loop = EventLoop::new();
 
     let base_window_title = "A fantastic window!";
-    let window = WindowBuilder::new()
+    let window_builder = WindowBuilder::new()
         .with_title(base_window_title)
-        .build(&event_loop)
+        .with_resizable(false);
+
+    let windowed_context = ContextBuilder::new()
+        .build_windowed(window_builder, &event_loop)
         .unwrap();
+    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
+    let gl = glutin_support::load(&windowed_context.context());
 
     #[rustfmt::skip]
     let table = {
@@ -260,10 +268,16 @@ fn main() {
             }
             Event::MainEventsCleared => {
                 if manual_mode {
-                    window.set_title(&format!("{} - Manual Mode", base_window_title));
+                    windowed_context
+                        .window()
+                        .set_title(&format!("{} - Manual Mode", base_window_title));
                 } else {
-                    window.set_title(base_window_title);
+                    windowed_context.window().set_title(base_window_title);
                 }
+            }
+            Event::RedrawRequested(_) => {
+                gl.draw_frame([1.0, 0.5, 0.7, 1.0]);
+                windowed_context.swap_buffers().unwrap();
             }
             _ => (),
         }
