@@ -324,7 +324,7 @@ fn native_key_code_to_string(native_key_code: NativeKeyCode) -> String {
         winit::keyboard::NativeKeyCode::XKB(keycode) => {
             format!("XKB({:#X})", keycode)
         }
-        _ => unimplemented!(),
+        winit::keyboard::NativeKeyCode::Unidentified => "Unidentified".to_string(),
     }
 }
 
