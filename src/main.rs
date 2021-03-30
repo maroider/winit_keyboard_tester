@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use glow::HasContext;
 use glutin::ContextBuilder;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
@@ -16,8 +17,6 @@ use winit::{
     keyboard::{Key, KeyCode, NativeKeyCode},
     window::WindowBuilder,
 };
-
-mod glutin_support;
 
 #[allow(dead_code)]
 mod column {
@@ -61,7 +60,72 @@ fn main() {
         .build_windowed(window_builder, &event_loop)
         .unwrap();
     let windowed_context = unsafe { windowed_context.make_current().unwrap() };
-    let gl = glutin_support::load(&windowed_context.context());
+    let (gl, program, vertex_array) = unsafe {
+        let gl = glow::Context::from_loader_function(|s| {
+            windowed_context.get_proc_address(s) as *const _
+        });
+
+        let vertex_array = gl
+            .create_vertex_array()
+            .expect("Cannot create vertex array");
+        gl.bind_vertex_array(Some(vertex_array));
+
+        let program = gl.create_program().expect("Cannot create program");
+
+        let (vertex_shader_source, fragment_shader_source) = (
+            r#"const vec2 verts[3] = vec2[3](
+                vec2(0.5f, 1.0f),
+                vec2(0.0f, 0.0f),
+                vec2(1.0f, 0.0f)
+            );
+            out vec2 vert;
+            void main() {
+                vert = verts[gl_VertexID];
+                gl_Position = vec4(vert - 0.5, 0.0, 1.0);
+            }"#,
+            r#"precision mediump float;
+            in vec2 vert;
+            out vec4 color;
+            void main() {
+                color = vec4(vert, 0.5, 1.0);
+            }"#,
+        );
+
+        let shader_sources = [
+            (glow::VERTEX_SHADER, vertex_shader_source),
+            (glow::FRAGMENT_SHADER, fragment_shader_source),
+        ];
+
+        let mut shaders = Vec::with_capacity(shader_sources.len());
+
+        for (shader_type, shader_source) in shader_sources.iter() {
+            let shader = gl
+                .create_shader(*shader_type)
+                .expect("Cannot create shader");
+            gl.shader_source(shader, &format!("{}\n{}", "#version 410", shader_source));
+            gl.compile_shader(shader);
+            if !gl.get_shader_compile_status(shader) {
+                std::panic::panic_any(gl.get_shader_info_log(shader));
+            }
+            gl.attach_shader(program, shader);
+            shaders.push(shader);
+        }
+
+        gl.link_program(program);
+        if !gl.get_program_link_status(program) {
+            std::panic::panic_any(gl.get_program_info_log(program));
+        }
+
+        for shader in shaders {
+            gl.detach_shader(program, shader);
+            gl.delete_shader(shader);
+        }
+
+        gl.use_program(Some(program));
+        gl.clear_color(0.1, 0.2, 0.3, 1.0);
+
+        (gl, program, vertex_array)
+    };
 
     #[rustfmt::skip]
     let table = {
@@ -276,9 +340,16 @@ fn main() {
                 }
             }
             Event::RedrawRequested(_) => {
-                gl.draw_frame([1.0, 0.5, 0.7, 1.0]);
+                unsafe {
+                    gl.clear(glow::COLOR_BUFFER_BIT);
+                    gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                }
                 windowed_context.swap_buffers().unwrap();
             }
+            Event::LoopDestroyed => unsafe {
+                gl.delete_program(program);
+                gl.delete_vertex_array(vertex_array);
+            },
             _ => (),
         }
 
