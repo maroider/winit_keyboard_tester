@@ -307,6 +307,8 @@ fn main() {
                 if manual_mode {
                     if event_number == 0 {
                         manual_mode = false;
+                        // TODO: Move this elsewhere?
+                        windowed_context.window().set_title(base_window_title);
                     } else {
                         table_printer.begin_new_table(&table);
                         event_number = 0;
@@ -316,6 +318,10 @@ fn main() {
                 } else {
                     if event_number == 0 {
                         manual_mode = true;
+                        // TODO: Move this elsewhere?
+                        windowed_context
+                            .window()
+                            .set_title(&format!("{} - Manual Mode", base_window_title));
                     } else {
                         pressed_count = 0;
                         modifiers = Default::default();
@@ -328,15 +334,6 @@ fn main() {
             } => {
                 if !manual_mode {
                     *control_flow = ControlFlow::Exit
-                }
-            }
-            Event::MainEventsCleared => {
-                if manual_mode {
-                    windowed_context
-                        .window()
-                        .set_title(&format!("{} - Manual Mode", base_window_title));
-                } else {
-                    windowed_context.window().set_title(base_window_title);
                 }
             }
             Event::RedrawRequested(_) => {
