@@ -14,7 +14,7 @@ use glutin::ContextBuilder;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, KeyCode, NativeKeyCode},
+    keyboard::{Key, KeyCode, ModifiersState, NativeKeyCode},
     window::WindowBuilder,
 };
 
@@ -155,7 +155,7 @@ fn main() {
             header: column::TEXT.to_string()         , normal_width: 12, extended_width: 0 , use_extended_width: false, enabled: true,
         });
         table.add_column(TableColumn {
-            header: column::MODIFIERS.to_string()    , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
+            header: column::MODIFIERS.to_string()    , normal_width: 11, extended_width: 11, use_extended_width: false, enabled: true,
         });
         #[cfg(not(target_arch = "wasm32"))]
         table.add_column(TableColumn {
@@ -288,9 +288,7 @@ fn main() {
                         .print_table_line()
                         .column(column::NUMBER, event_number)
                         .column(column::KIND, "ModC")
-                        .column_with(column::MODIFIERS, || {
-                            format!("{:?}", modifiers).replace("|", "")
-                        })
+                        .column_with(column::MODIFIERS, || format_modifiers(modifiers))
                         .print(&mut table_printer);
 
                     event_number += 1;
@@ -441,6 +439,34 @@ fn nice_text(text: &str) -> String {
     } else {
         text.to_string()
     }
+}
+
+fn format_modifiers(modifiers: ModifiersState) -> String {
+    let mut string = String::with_capacity(modifiers.bits().count_ones() as usize * 3);
+
+    if modifiers.contains(ModifiersState::ALT) {
+        string.push_str("AL");
+    }
+    if modifiers.contains(ModifiersState::CONTROL) {
+        if !string.is_empty() {
+            string.push('|');
+        }
+        string.push_str("CO");
+    }
+    if modifiers.contains(ModifiersState::SHIFT) {
+        if !string.is_empty() {
+            string.push('|');
+        }
+        string.push_str("SH");
+    }
+    if modifiers.contains(ModifiersState::SUPER) {
+        if !string.is_empty() {
+            string.push('|');
+        }
+        string.push_str("SU");
+    }
+
+    string
 }
 
 struct Table {
