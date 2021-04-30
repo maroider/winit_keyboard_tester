@@ -7,7 +7,7 @@
 //! When the current table is empty, the middle mouse button can be used to switch between manual
 //! and automatic mode. Manual mode is indicated in the title bar.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use glow::HasContext;
 use glutin::ContextBuilder;
@@ -191,6 +191,8 @@ fn main() {
     #[cfg(not(feature = "web-sys"))]
     let mut table_printer = StdoutTablePrinter::new();
 
+    let mut raw_keys_pressed = HashSet::new();
+
     let mut focused = true;
     let mut event_number = 0u16;
     let mut pressed_count = 0i32;
@@ -247,20 +249,32 @@ fn main() {
                 event: DeviceEvent::Key(event),
                 ..
             } => {
-                if !event.repeat && (focused || pressed_count > 0) {
-                    table
-                        .print_table_line()
-                        .column(column::NUMBER, event_number)
-                        .column(column::KIND, "Device")
-                        .column_with(column::STATE, || format!("{:?}", event.state))
-                        .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key))
-                        .print(&mut table_printer);
+                if focused || pressed_count > 0 {
+                    let repeat = match event.state {
+                        ElementState::Pressed => {
+                            pressed_count += 1;
+                            raw_keys_pressed.insert(event.physical_key)
+                        }
+                        ElementState::Released => {
+                            if raw_keys_pressed.remove(&event.physical_key) {
+                                pressed_count -= 1;
+                            }
+                            false
+                        }
+                    };
 
-                    event_number += 1;
+                    if !repeat {
+                        table
+                            .print_table_line()
+                            .column(column::NUMBER, event_number)
+                            .column(column::KIND, "Device")
+                            .column_with(column::STATE, || format!("{:?}", event.state))
+                            .column_with(column::KEY_CODE, || {
+                                key_code_to_string(event.physical_key)
+                            })
+                            .print(&mut table_printer);
 
-                    match event.state {
-                        ElementState::Pressed => pressed_count += 1,
-                        ElementState::Released => pressed_count -= 1,
+                        event_number += 1;
                     }
                 }
             }
