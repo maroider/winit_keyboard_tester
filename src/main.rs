@@ -253,7 +253,7 @@ fn main() {
                     let repeat = match event.state {
                         ElementState::Pressed => {
                             pressed_count += 1;
-                            raw_keys_pressed.insert(event.physical_key)
+                            !raw_keys_pressed.insert(event.physical_key)
                         }
                         ElementState::Released => {
                             if raw_keys_pressed.remove(&event.physical_key) {
