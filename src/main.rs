@@ -210,6 +210,15 @@ fn main() {
                 event: WindowEvent::Focused(focus),
                 ..
             } => {
+                if event_number > 0 {
+                    table
+                        .print_table_line()
+                        .column(column::NUMBER, event_number)
+                        .column(column::KIND, "Focus")
+                        .column(column::STATE, if focus { "Received" } else { "Lost" })
+                        .print(&mut table_printer);
+                    event_number += 1;
+                }
                 focused = focus;
             }
             Event::WindowEvent {
