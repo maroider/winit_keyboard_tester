@@ -7,7 +7,7 @@
 //! When the current table is empty, the middle mouse button can be used to switch between manual
 //! and automatic mode. Manual mode is indicated in the title bar.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use glow::HasContext;
 use glutin::ContextBuilder;
@@ -191,7 +191,8 @@ fn main() {
     #[cfg(not(feature = "web-sys"))]
     let mut table_printer = StdoutTablePrinter::new();
 
-    let mut raw_keys_pressed = HashSet::new();
+    let mut raw_keys_pressed = HashMap::new();
+    let mut repeated_keys = HashMap::new();
 
     let mut focused = true;
     let mut event_number = 0u16;
@@ -220,29 +221,43 @@ fn main() {
                     },
                 ..
             } => {
+                let table = table
+                    .print_table_line()
+                    .column(column::NUMBER, event_number)
+                    .column(column::KIND, "Window")
+                    .column(column::SYNTH, is_synthetic)
+                    .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key))
+                    .column_with(column::KEY, || key_to_string(event.logical_key))
+                    .column_with(column::LOCATION, || format!("{:?}", event.location))
+                    .column_with(column::TEXT, || {
+                        event.text.map(nice_text).unwrap_or_else(|| "".to_string())
+                    })
+                    .column_with(column::KEY_NO_MOD, || key_without_modifiers(&event))
+                    .column_with(column::TEXT_ALL_MODS, || text_with_all_modifiers(&event));
+
                 if !event.repeat {
                     table
-                        .print_table_line()
-                        .column(column::NUMBER, event_number)
-                        .column(column::KIND, "Window")
-                        .column(column::SYNTH, is_synthetic)
                         .column_with(column::STATE, || format!("{:?}", event.state))
-                        .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key))
-                        .column_with(column::KEY, || key_to_string(event.logical_key))
-                        .column_with(column::LOCATION, || format!("{:?}", event.location))
-                        .column_with(column::TEXT, || {
-                            event.text.map(nice_text).unwrap_or_else(|| "".to_string())
-                        })
-                        .column_with(column::KEY_NO_MOD, || key_without_modifiers(&event))
-                        .column_with(column::TEXT_ALL_MODS, || text_with_all_modifiers(&event))
                         .print(&mut table_printer);
 
                     event_number += 1;
 
                     match event.state {
                         ElementState::Pressed => pressed_count += 1,
-                        ElementState::Released => pressed_count -= 1,
+                        ElementState::Released => {
+                            repeated_keys.remove(&event.physical_key);
+                            pressed_count -= 1
+                        }
                     }
+                } else {
+                    let repeat_count = { repeated_keys.entry(event.physical_key).or_insert(1) };
+                    if *repeat_count == 1 {
+                        event_number += 1;
+                    }
+                    table
+                        .column_with(column::STATE, || format!("Rpt {:>4}", repeat_count))
+                        .update(&mut table_printer);
+                    *repeat_count += 1;
                 }
             }
             Event::DeviceEvent {
@@ -250,30 +265,46 @@ fn main() {
                 ..
             } => {
                 if focused || pressed_count > 0 {
-                    let repeat = match event.state {
-                        ElementState::Pressed => {
-                            pressed_count += 1;
-                            !raw_keys_pressed.insert(event.physical_key)
-                        }
+                    let repeat_count = match event.state {
+                        ElementState::Pressed => Some(
+                            raw_keys_pressed
+                                .entry(event.physical_key)
+                                .or_insert_with(|| {
+                                    pressed_count += 1;
+                                    0
+                                }),
+                        ),
                         ElementState::Released => {
-                            if raw_keys_pressed.remove(&event.physical_key) {
+                            if raw_keys_pressed.remove(&event.physical_key).is_some() {
                                 pressed_count -= 1;
                             }
-                            false
+                            None
                         }
                     };
 
-                    if !repeat {
-                        table
-                            .print_table_line()
-                            .column(column::NUMBER, event_number)
-                            .column(column::KIND, "Device")
-                            .column_with(column::STATE, || format!("{:?}", event.state))
-                            .column_with(column::KEY_CODE, || {
-                                key_code_to_string(event.physical_key)
-                            })
-                            .print(&mut table_printer);
+                    let table = table
+                        .print_table_line()
+                        .column(column::NUMBER, event_number)
+                        .column(column::KIND, "Device")
+                        .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key));
 
+                    let print_normal = if let Some(repeat_count) = repeat_count {
+                        if *repeat_count > 0 {
+                            table
+                                .clone() // TODO: Get rid of this clone
+                                .column_with(column::STATE, || format!("Rpt {:>4}", repeat_count))
+                                .update(&mut table_printer);
+                            false
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    };
+                    if print_normal {
+                        table
+                            .column_with(column::STATE, || format!("{:?}", event.state))
+                            .print(&mut table_printer);
                         event_number += 1;
                     }
                 }
@@ -325,6 +356,8 @@ fn main() {
                         table_printer.begin_new_table(&table);
                         event_number = 0;
                         pressed_count = 0;
+                        raw_keys_pressed.clear();
+                        repeated_keys.clear();
                         modifiers = Default::default();
                     }
                 } else {
@@ -508,6 +541,7 @@ impl TableColumn {
     }
 }
 
+#[derive(Clone)]
 struct RowBuilder<'a> {
     table: &'a Table,
     column_values: HashMap<String, String>,
@@ -550,16 +584,23 @@ impl<'a> RowBuilder<'a> {
     fn print<P: TablePrinter>(self, printer: &mut P) {
         printer.print_row(self)
     }
+
+    fn update<P: TablePrinter>(self, printer: &mut P) {
+        printer.update_row(self)
+    }
 }
 
 trait TablePrinter {
     fn begin_new_table(&mut self, table: &Table);
 
     fn print_row(&mut self, row: RowBuilder<'_>);
+
+    fn update_row(&mut self, row: RowBuilder<'_>);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 struct StdoutTablePrinter {
+    updating: bool,
     ioprinter: IoWriteTablePrinter,
 }
 
@@ -567,6 +608,7 @@ struct StdoutTablePrinter {
 impl StdoutTablePrinter {
     fn new() -> Self {
         Self {
+            updating: false,
             ioprinter: IoWriteTablePrinter::new(),
         }
     }
@@ -585,10 +627,28 @@ impl TablePrinter for StdoutTablePrinter {
     }
 
     fn print_row(&mut self, row: RowBuilder<'_>) {
-        use std::io;
+        use std::io::{self, Write};
         let stdout = io::stdout();
         let mut out = stdout.lock();
 
+        if self.updating {
+            write!(out, "\n").unwrap();
+            self.updating = false;
+        }
+
+        self.ioprinter.print_row(row, &mut out);
+
+        write!(out, "\n").unwrap();
+    }
+
+    fn update_row(&mut self, row: RowBuilder<'_>) {
+        use std::io::{self, Write};
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+
+        self.updating = true;
+
+        write!(out, "\r").unwrap();
         self.ioprinter.print_row(row, &mut out);
     }
 }
@@ -776,7 +836,7 @@ impl IoWriteTablePrinter {
             )
             .unwrap();
         }
-        writeln!(out, "|").unwrap();
+        write!(out, "|").unwrap();
 
         out.flush().unwrap();
     }
