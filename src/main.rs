@@ -7,15 +7,16 @@
 //! When the current table is empty, the middle mouse button can be used to switch between manual
 //! and automatic mode. Manual mode is indicated in the title bar.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::Infallible};
 
 use glow::HasContext;
-use glutin::ContextBuilder;
+use glutin::{ContextBuilder, ContextWrapper, PossiblyCurrent};
+use pico_args::Arguments;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, KeyCode, ModifiersState, NativeKeyCode},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
 #[allow(dead_code)]
@@ -56,76 +57,11 @@ fn main() {
         .with_title(base_window_title)
         .with_resizable(false);
 
-    let windowed_context = ContextBuilder::new()
-        .build_windowed(window_builder, &event_loop)
-        .unwrap();
-    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
-    let (gl, program, vertex_array) = unsafe {
-        let gl = glow::Context::from_loader_function(|s| {
-            windowed_context.get_proc_address(s) as *const _
-        });
-
-        let vertex_array = gl
-            .create_vertex_array()
-            .expect("Cannot create vertex array");
-        gl.bind_vertex_array(Some(vertex_array));
-
-        let program = gl.create_program().expect("Cannot create program");
-
-        let (vertex_shader_source, fragment_shader_source) = (
-            r#"const vec2 verts[3] = vec2[3](
-                vec2(0.5f, 1.0f),
-                vec2(0.0f, 0.0f),
-                vec2(1.0f, 0.0f)
-            );
-            out vec2 vert;
-            void main() {
-                vert = verts[gl_VertexID];
-                gl_Position = vec4(vert - 0.5, 0.0, 1.0);
-            }"#,
-            r#"precision mediump float;
-            in vec2 vert;
-            out vec4 color;
-            void main() {
-                color = vec4(vert, 0.5, 1.0);
-            }"#,
-        );
-
-        let shader_sources = [
-            (glow::VERTEX_SHADER, vertex_shader_source),
-            (glow::FRAGMENT_SHADER, fragment_shader_source),
-        ];
-
-        let mut shaders = Vec::with_capacity(shader_sources.len());
-
-        for (shader_type, shader_source) in shader_sources.iter() {
-            let shader = gl
-                .create_shader(*shader_type)
-                .expect("Cannot create shader");
-            gl.shader_source(shader, &format!("{}\n{}", "#version 410", shader_source));
-            gl.compile_shader(shader);
-            if !gl.get_shader_compile_status(shader) {
-                std::panic::panic_any(gl.get_shader_info_log(shader));
-            }
-            gl.attach_shader(program, shader);
-            shaders.push(shader);
-        }
-
-        gl.link_program(program);
-        if !gl.get_program_link_status(program) {
-            std::panic::panic_any(gl.get_program_info_log(program));
-        }
-
-        for shader in shaders {
-            gl.detach_shader(program, shader);
-            gl.delete_shader(shader);
-        }
-
-        gl.use_program(Some(program));
-        gl.clear_color(0.1, 0.2, 0.3, 1.0);
-
-        (gl, program, vertex_array)
-    };
+    let mut pargs = Arguments::from_env();
+    let enable_gl = pargs
+        .free_from_fn::<_, Infallible>(|arg| Ok(if arg == "--enable-gl" { true } else { false }))
+        .unwrap_or(false);
+    let optional_gl = OptionalGl::new(enable_gl, window_builder, &event_loop);
 
     #[rustfmt::skip]
     let table = {
@@ -360,7 +296,7 @@ fn main() {
                     if event_number == 0 {
                         manual_mode = false;
                         // TODO: Move this elsewhere?
-                        windowed_context.window().set_title(base_window_title);
+                        optional_gl.window().set_title(base_window_title);
                     } else {
                         table_printer.begin_new_table(&table);
                         event_number = 0;
@@ -373,7 +309,7 @@ fn main() {
                     if event_number == 0 {
                         manual_mode = true;
                         // TODO: Move this elsewhere?
-                        windowed_context
+                        optional_gl
                             .window()
                             .set_title(&format!("{} - Manual Mode", base_window_title));
                     } else {
@@ -391,16 +327,9 @@ fn main() {
                 }
             }
             Event::RedrawRequested(_) => {
-                unsafe {
-                    gl.clear(glow::COLOR_BUFFER_BIT);
-                    gl.draw_arrays(glow::TRIANGLES, 0, 3);
-                }
-                windowed_context.swap_buffers().unwrap();
+                optional_gl.redraw();
             }
-            Event::LoopDestroyed => unsafe {
-                gl.delete_program(program);
-                gl.delete_vertex_array(vertex_array);
-            },
+            Event::LoopDestroyed => optional_gl.cleanup(),
             _ => (),
         }
 
@@ -848,5 +777,141 @@ impl IoWriteTablePrinter {
         write!(out, "|").unwrap();
 
         out.flush().unwrap();
+    }
+}
+
+enum WindowLike {
+    Normal(Window),
+    Glutin(ContextWrapper<PossiblyCurrent, Window>),
+}
+
+impl WindowLike {
+    fn as_window(&self) -> &Window {
+        match self {
+            Self::Normal(window) => window,
+            Self::Glutin(wc) => wc.window(),
+        }
+    }
+}
+
+struct OptionalGl {
+    window: WindowLike,
+    gl: Option<glow::Context>,
+    program: u32,
+    vertex_array: u32,
+}
+
+impl OptionalGl {
+    fn new(enable: bool, window_builder: WindowBuilder, event_loop: &EventLoop<()>) -> Self {
+        if enable {
+            let windowed_context = ContextBuilder::new()
+                .build_windowed(window_builder, event_loop)
+                .unwrap();
+            let windowed_context = unsafe { windowed_context.make_current().unwrap() };
+            let (gl, program, vertex_array) = unsafe {
+                let gl = glow::Context::from_loader_function(|s| {
+                    windowed_context.get_proc_address(s) as *const _
+                });
+
+                let vertex_array = gl
+                    .create_vertex_array()
+                    .expect("Cannot create vertex array");
+                gl.bind_vertex_array(Some(vertex_array));
+
+                let program = gl.create_program().expect("Cannot create program");
+
+                let (vertex_shader_source, fragment_shader_source) = (
+                    r#"const vec2 verts[3] = vec2[3](
+                vec2(0.5f, 1.0f),
+                vec2(0.0f, 0.0f),
+                vec2(1.0f, 0.0f)
+            );
+            out vec2 vert;
+            void main() {
+                vert = verts[gl_VertexID];
+                gl_Position = vec4(vert - 0.5, 0.0, 1.0);
+            }"#,
+                    r#"precision mediump float;
+            in vec2 vert;
+            out vec4 color;
+            void main() {
+                color = vec4(vert, 0.5, 1.0);
+            }"#,
+                );
+
+                let shader_sources = [
+                    (glow::VERTEX_SHADER, vertex_shader_source),
+                    (glow::FRAGMENT_SHADER, fragment_shader_source),
+                ];
+
+                let mut shaders = Vec::with_capacity(shader_sources.len());
+
+                for (shader_type, shader_source) in shader_sources.iter() {
+                    let shader = gl
+                        .create_shader(*shader_type)
+                        .expect("Cannot create shader");
+                    gl.shader_source(shader, &format!("{}\n{}", "#version 410", shader_source));
+                    gl.compile_shader(shader);
+                    if !gl.get_shader_compile_status(shader) {
+                        std::panic::panic_any(gl.get_shader_info_log(shader));
+                    }
+                    gl.attach_shader(program, shader);
+                    shaders.push(shader);
+                }
+
+                gl.link_program(program);
+                if !gl.get_program_link_status(program) {
+                    std::panic::panic_any(gl.get_program_info_log(program));
+                }
+
+                for shader in shaders {
+                    gl.detach_shader(program, shader);
+                    gl.delete_shader(shader);
+                }
+
+                gl.use_program(Some(program));
+                gl.clear_color(0.1, 0.2, 0.3, 1.0);
+
+                (gl, program, vertex_array)
+            };
+            Self {
+                window: WindowLike::Glutin(windowed_context),
+                gl: Some(gl),
+                program,
+                vertex_array,
+            }
+        } else {
+            Self {
+                window: WindowLike::Normal(window_builder.build(&event_loop).unwrap()),
+                gl: None,
+                program: 0,
+                vertex_array: 0,
+            }
+        }
+    }
+
+    fn redraw(&self) {
+        if let Some(gl) = self.gl.as_ref() {
+            unsafe {
+                gl.clear(glow::COLOR_BUFFER_BIT);
+                gl.draw_arrays(glow::TRIANGLES, 0, 3);
+            }
+            if let WindowLike::Glutin(windowed_context) = &self.window {
+                windowed_context.swap_buffers().unwrap();
+            }
+        }
+    }
+
+    fn cleanup(&self) {
+        if let Some(gl) = self.gl.as_ref() {
+            unsafe {
+                gl.delete_program(self.program);
+                gl.delete_vertex_array(self.vertex_array);
+            }
+        }
+    }
+
+    fn window(&self) -> &Window {
+        self.window.as_window()
     }
 }

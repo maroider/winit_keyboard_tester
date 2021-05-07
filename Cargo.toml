@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-simple_logger = "1.11.0"
 glow = "0.8.1"
 glutin = "0.26.0"
-winit = { path = "../winit" }
+pico-args = "0.4.1"
+simple_logger = "1.11.0"
 takeable-option = "0.4"
+winit = { path = "../winit" }
 
 [target.'cfg(not(target_arc = "wasm32"))'.dependencies]
 simple_logger = "1.11.0"
