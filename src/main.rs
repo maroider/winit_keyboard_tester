@@ -1,12 +1,3 @@
-//! Test program for keyboard input.
-//!
-//! This program will print out markdown tables of sequences of key events.
-//!
-//! It will automatically terminate a table when it can see that all buttons have been released.
-//! You can press the middle mouse button to terminate the table manually.
-//! When the current table is empty, the middle mouse button can be used to switch between manual
-//! and automatic mode. Manual mode is indicated in the title bar.
-
 use std::collections::HashMap;
 
 use winit::{
