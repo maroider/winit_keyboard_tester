@@ -1,2 +1,5 @@
 target/
 Cargo.lock
+
+winit_keyboard_tester_bg.wasm
+winit_keyboard_tester.js

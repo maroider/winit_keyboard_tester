@@ -7,17 +7,19 @@
 //! When the current table is empty, the middle mouse button can be used to switch between manual
 //! and automatic mode. Manual mode is indicated in the title bar.
 
-use std::{collections::HashMap, convert::Infallible};
+use std::collections::HashMap;
 
-use glow::HasContext;
-use glutin::{ContextBuilder, ContextWrapper, PossiblyCurrent};
-use pico_args::Arguments;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, KeyCode, ModifiersState, NativeKeyCode},
     window::{Window, WindowBuilder},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use glow::HasContext;
+#[cfg(not(target_arch = "wasm32"))]
+use glutin::{ContextBuilder, ContextWrapper, PossiblyCurrent};
 
 #[allow(dead_code)]
 mod column {
@@ -35,12 +37,12 @@ mod column {
     pub const SCAN_CODE: &str = "Scancode";
 }
 
-#[cfg(feature = "web-sys")]
+#[cfg(target_arch = "wasm32")]
 mod wasm {
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen(start)]
-    pub fn run() {
+    pub fn wasm_main() {
         console_log::init_with_level(log::Level::Debug).unwrap();
 
         super::main();
@@ -57,10 +59,17 @@ fn main() {
         .with_title(base_window_title)
         .with_resizable(false);
 
-    let mut pargs = Arguments::from_env();
-    let enable_gl = pargs
-        .free_from_fn::<_, Infallible>(|arg| Ok(if arg == "--enable-gl" { true } else { false }))
-        .unwrap_or(false);
+    #[cfg(not(target_arch = "wasm32"))]
+    let enable_gl = {
+        let mut pargs = pico_args::Arguments::from_env();
+        let enable_gl = pargs
+            .free_from_fn::<_, std::convert::Infallible>(|arg| {
+                Ok(if arg == "--enable-gl" { true } else { false })
+            })
+            .unwrap_or(false);
+    };
+    #[cfg(target_arch = "wasm32")]
+    let enable_gl = false;
     let optional_gl = OptionalGl::new(enable_gl, window_builder, &event_loop);
 
     #[rustfmt::skip]
@@ -108,11 +117,11 @@ fn main() {
         table
     };
 
-    #[cfg(feature = "web-sys")]
+    #[cfg(target_arch = "wasm32")]
     let mut table_printer = {
         use winit::platform::web::WindowExtWebSys;
 
-        let canvas = window.canvas();
+        let canvas = optional_gl.window().canvas();
 
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
@@ -124,7 +133,7 @@ fn main() {
         HtmlTablePrinter::new(document, &body, &table)
     };
 
-    #[cfg(not(feature = "web-sys"))]
+    #[cfg(not(target_arch = "wasm32"))]
     let mut table_printer = StdoutTablePrinter::new();
 
     let mut raw_keys_pressed = HashMap::new();
@@ -375,6 +384,7 @@ fn native_key_code_to_string(native_key_code: NativeKeyCode) -> String {
         winit::keyboard::NativeKeyCode::XKB(keycode) => {
             format!("XKB({:#X})", keycode)
         }
+        winit::keyboard::NativeKeyCode::Web(keycode) => keycode.to_string(),
         winit::keyboard::NativeKeyCode::Unidentified => "Unidentified".to_string(),
     }
 }
@@ -600,6 +610,7 @@ struct HtmlTablePrinter {
     last_table: Option<web_sys::Element>,
     ioprinter: IoWriteTablePrinter,
     markdown_table_buffer: Vec<u8>,
+    updating: bool,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -619,6 +630,7 @@ impl HtmlTablePrinter {
             last_table: None,
             ioprinter: IoWriteTablePrinter::new(),
             markdown_table_buffer: Vec::new(),
+            updating: false,
         }
     }
 
@@ -692,6 +704,28 @@ impl TablePrinter for HtmlTablePrinter {
 
     fn print_row(&mut self, row: RowBuilder<'_>) {
         let tr = self.document.create_element("tr").unwrap();
+        self.fill_row(&tr, row);
+        self.tbody.append_child(&tr).unwrap();
+        self.updating = false;
+    }
+
+    fn update_row(&mut self, row: RowBuilder<'_>) {
+        if self.updating {
+            if let Some(tr) = self.tbody.last_element_child() {
+                while let Some(last_child) = tr.last_element_child() {
+                    tr.remove_child(last_child.as_ref()).unwrap();
+                }
+                self.fill_row(&tr, row)
+            }
+        } else {
+            self.print_row(row);
+            self.updating = true;
+        }
+    }
+}
+
+impl HtmlTablePrinter {
+    fn fill_row(&mut self, tr: &web_sys::Element, row: RowBuilder<'_>) {
         for column in row.table.columns.iter() {
             if !column.enabled {
                 continue;
@@ -702,7 +736,6 @@ impl TablePrinter for HtmlTablePrinter {
             }
             tr.append_child(&td).unwrap();
         }
-        self.tbody.append_child(&tr).unwrap();
 
         self.ioprinter
             .print_row(row, &mut self.markdown_table_buffer);
@@ -782,6 +815,7 @@ impl IoWriteTablePrinter {
 
 enum WindowLike {
     Normal(Window),
+    #[cfg(not(target_arch = "wasm32"))]
     Glutin(ContextWrapper<PossiblyCurrent, Window>),
 }
 
@@ -789,20 +823,25 @@ impl WindowLike {
     fn as_window(&self) -> &Window {
         match self {
             Self::Normal(window) => window,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Glutin(wc) => wc.window(),
         }
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 struct OptionalGl {
     window: WindowLike,
+    #[cfg(not(target_arch = "wasm32"))]
     gl: Option<glow::Context>,
     program: u32,
     vertex_array: u32,
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 impl OptionalGl {
     fn new(enable: bool, window_builder: WindowBuilder, event_loop: &EventLoop<()>) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
         if enable {
             let windowed_context = ContextBuilder::new()
                 .build_windowed(window_builder, event_loop)
@@ -876,6 +915,7 @@ impl OptionalGl {
             };
             Self {
                 window: WindowLike::Glutin(windowed_context),
+                #[cfg(not(target_arch = "wasm32"))]
                 gl: Some(gl),
                 program,
                 vertex_array,
@@ -883,14 +923,22 @@ impl OptionalGl {
         } else {
             Self {
                 window: WindowLike::Normal(window_builder.build(&event_loop).unwrap()),
+                #[cfg(not(target_arch = "wasm32"))]
                 gl: None,
                 program: 0,
                 vertex_array: 0,
             }
         }
+        #[cfg(target_arch = "wasm32")]
+        Self {
+            window: WindowLike::Normal(window_builder.build(&event_loop).unwrap()),
+            program: 0,
+            vertex_array: 0,
+        }
     }
 
     fn redraw(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(gl) = self.gl.as_ref() {
             unsafe {
                 gl.clear(glow::COLOR_BUFFER_BIT);
@@ -903,6 +951,7 @@ impl OptionalGl {
     }
 
     fn cleanup(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(gl) = self.gl.as_ref() {
             unsafe {
                 gl.delete_program(self.program);
