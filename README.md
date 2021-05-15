@@ -7,6 +7,8 @@ it easier for everyone to communicate and understand implementation and/or platf
 
 ## How to use
 
+### Clone
+
 Clone this repository and Winit's repository into adjacent folders, and add the required remotes to get the
 branch of the PR you want to test.
 
@@ -16,10 +18,24 @@ parent
 └── winit_keyboard_tester
 ```
 
-If you want to test the WASM implementation, you should use one of the `build-web` scripts.
+### Build & run
+
+#### General
+
+For most platforms, building the program with `cargo build` should be sufficient.
+
+#### WASM
+
+First, you should install `wasm-bindgen-cli` by running `cargo install wasm-bindgen-cli`.
+
+You can then use one of the `build-web` scripts.
+
+#### Wayland
 
 If you're using Wayland, you need to pass the program the `--enable-gl` flag, potentially like so:
 `cargo run -- --enable-gl`, as windows on Wayland don't appear until they're drawn onto.
+
+### Use
 
 When all keys have been released, the program should automatically terminate the current table and begin a
 new one. The current table can also be terminated by pressing the middle mouse button.
