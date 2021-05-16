@@ -53,11 +53,11 @@ fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     let enable_gl = {
         let mut pargs = pico_args::Arguments::from_env();
-        let enable_gl = pargs
+        pargs
             .free_from_fn::<_, std::convert::Infallible>(|arg| {
                 Ok(if arg == "--enable-gl" { true } else { false })
             })
-            .unwrap_or(false);
+            .unwrap_or(false)
     };
     #[cfg(target_arch = "wasm32")]
     let enable_gl = false;
@@ -375,7 +375,8 @@ fn native_key_code_to_string(native_key_code: NativeKeyCode) -> String {
         winit::keyboard::NativeKeyCode::XKB(keycode) => {
             format!("XKB({:#X})", keycode)
         }
-        winit::keyboard::NativeKeyCode::Web(keycode) => keycode.to_string(),
+        #[cfg(target_arch = "wasm32")]
+        winit::keyboard::NativeKeyCode::Web() => "".to_string(),
         winit::keyboard::NativeKeyCode::Unidentified => "Unidentified".to_string(),
     }
 }
@@ -715,6 +716,7 @@ impl TablePrinter for HtmlTablePrinter {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl HtmlTablePrinter {
     fn fill_row(&mut self, tr: &web_sys::Element, row: RowBuilder<'_>) {
         for column in row.table.columns.iter() {
