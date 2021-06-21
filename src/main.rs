@@ -407,7 +407,7 @@ fn text_with_all_modifiers(_: &KeyEvent) -> &'static str {
 }
 
 fn nice_text(text: &str) -> String {
-    if text.chars().any(|c| c.is_control()) {
+    if text.chars().any(|c| c.is_control() || c.is_whitespace()) {
         format!("{:?}", text)
     } else {
         text.to_string()
