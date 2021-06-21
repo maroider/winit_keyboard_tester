@@ -171,8 +171,8 @@ fn main() {
                     .column(column::NUMBER, event_number)
                     .column(column::KIND, "Window")
                     .column(column::SYNTH, is_synthetic)
-                    .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key))
-                    .column_with(column::KEY, || key_to_string(event.logical_key))
+                    .column_with(column::KEY_CODE, || key_code_to_string(&event.physical_key))
+                    .column_with(column::KEY, || key_to_string(&event.logical_key))
                     .column_with(column::LOCATION, || format!("{:?}", event.location))
                     .column_with(column::TEXT, || {
                         event.text.map(nice_text).unwrap_or_else(|| "".to_string())
@@ -213,7 +213,7 @@ fn main() {
                     let repeat_count = match event.state {
                         ElementState::Pressed => Some(
                             raw_keys_pressed
-                                .entry(event.physical_key)
+                                .entry(event.physical_key.clone())
                                 .or_insert_with(|| {
                                     pressed_count += 1;
                                     0
@@ -231,7 +231,7 @@ fn main() {
                         .print_table_line()
                         .column(column::NUMBER, event_number)
                         .column(column::KIND, "Device")
-                        .column_with(column::KEY_CODE, || key_code_to_string(event.physical_key));
+                        .column_with(column::KEY_CODE, || key_code_to_string(&event.physical_key));
 
                     let print_normal = if let Some(repeat_count) = repeat_count {
                         if *repeat_count > 0 {
@@ -344,7 +344,7 @@ fn main() {
     });
 }
 
-fn key_to_string(key: Key) -> String {
+fn key_to_string(key: &Key) -> String {
     match key {
         Key::Unidentified(native_key_code) => format!(
             "Unidentified({})",
@@ -354,7 +354,7 @@ fn key_to_string(key: Key) -> String {
     }
 }
 
-fn key_code_to_string(code: KeyCode) -> String {
+fn key_code_to_string(code: &KeyCode) -> String {
     match code {
         KeyCode::Unidentified(native_key_code) => format!(
             "Unidentified({})",
@@ -364,10 +364,10 @@ fn key_code_to_string(code: KeyCode) -> String {
     }
 }
 
-fn native_key_code_to_string(native_key_code: NativeKeyCode) -> String {
+fn native_key_code_to_string(native_key_code: &NativeKeyCode) -> String {
     match native_key_code {
         winit::keyboard::NativeKeyCode::Windows(scancode) => {
-            format!("Windows({:#X})", scancode as u32)
+            format!("Windows({:#X})", *scancode as u32)
         }
         winit::keyboard::NativeKeyCode::MacOS(keycode) => {
             format!("MacOS({:#X})", keycode)
@@ -376,7 +376,7 @@ fn native_key_code_to_string(native_key_code: NativeKeyCode) -> String {
             format!("XKB({:#X})", keycode)
         }
         #[cfg(target_arch = "wasm32")]
-        winit::keyboard::NativeKeyCode::Web() => "".to_string(),
+        winit::keyboard::NativeKeyCode::Web(keycode) => format!("Web({:?})", keycode),
         winit::keyboard::NativeKeyCode::Unidentified => "Unidentified".to_string(),
     }
 }
