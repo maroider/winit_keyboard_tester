@@ -66,45 +66,21 @@ fn main() {
     #[rustfmt::skip]
     let table = {
         let mut table = Table::new();
-        table.add_column(TableColumn {
-            header: column::NUMBER.to_string()       , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::KIND.to_string()         , normal_width: 6 , extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::SYNTH.to_string()        , normal_width: 5 , extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::STATE.to_string()        , normal_width: 8 , extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::KEY_CODE.to_string()     , normal_width: 20, extended_width: 37, use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::KEY.to_string()          , normal_width: 25, extended_width: 42, use_extended_width: true , enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::LOCATION.to_string()     , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::TEXT.to_string()         , normal_width: 12, extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        table.add_column(TableColumn {
-            header: column::MODIFIERS.to_string()    , normal_width: 11, extended_width: 11, use_extended_width: false, enabled: true,
-        });
+        table.add_column(TableColumn { header: column::NUMBER       , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::KIND         , normal_width: 6 , extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::SYNTH        , normal_width: 5 , extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::STATE        , normal_width: 8 , extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::KEY_CODE     , normal_width: 20, extended_width: 37, use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::KEY          , normal_width: 25, extended_width: 42, use_extended_width: true , enabled: true , });
+        table.add_column(TableColumn { header: column::LOCATION     , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::TEXT         , normal_width: 12, extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::MODIFIERS    , normal_width: 11, extended_width: 11, use_extended_width: false, enabled: true , });
         #[cfg(not(target_arch = "wasm32"))]
-        table.add_column(TableColumn {
-            header: column::KEY_NO_MOD.to_string()   , normal_width: 25, extended_width: 42, use_extended_width: false, enabled: true,
-        });
-        #[cfg(not(target_arch = "wasm32"))]
-        table.add_column(TableColumn {
-            header: column::TEXT_ALL_MODS.to_string(), normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true,
-        });
-        #[cfg(not(target_arch = "wasm32"))]
-        table.add_column(TableColumn {
-            header: column::SCAN_CODE.to_string()    , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: false,
-        });
+        {
+        table.add_column(TableColumn { header: column::KEY_NO_MOD   , normal_width: 25, extended_width: 42, use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::TEXT_ALL_MODS, normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: true , });
+        table.add_column(TableColumn { header: column::SCAN_CODE    , normal_width: 0 , extended_width: 0 , use_extended_width: false, enabled: false, });
+        }
         table
     };
 
@@ -463,7 +439,7 @@ impl Table {
 }
 
 struct TableColumn {
-    header: String,
+    header: &'static str,
     normal_width: usize,
     extended_width: usize,
     use_extended_width: bool,
@@ -793,7 +769,7 @@ impl IoWriteTablePrinter {
                 out,
                 "| {:<length$} ",
                 row.column_values
-                    .get(&column.header)
+                    .get(column.header)
                     .map(AsRef::as_ref)
                     .unwrap_or(""),
                 length = column.width(),
