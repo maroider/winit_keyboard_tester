@@ -9,8 +9,8 @@ it easier for everyone to communicate and understand implementation and/or platf
 
 ### Clone
 
-Clone this repository and Winit's repository into adjacent folders, and add the required remotes to get the
-branch of the PR you want to test.
+Clone this repository and Winit's repository into adjacent folders, and add the required remotes to
+get the branch of the PR you want to test.
 
 ```
 parent
@@ -37,11 +37,11 @@ If you're using Wayland, you need to pass the program the `--enable-gl` flag, po
 
 ### Use
 
-When all keys have been released, the program should automatically terminate the current table and begin a
-new one. The current table can also be terminated by pressing the middle mouse button.
+When all keys have been released, the program should automatically terminate the current table and
+begin a new one. The current table can also be terminated by pressing the middle mouse button.
 
-When the current table is empty, the middle mouse button can be used to switch between manual and automatic
-mode. Manual mode is indicated in the title bar.
+When the current table is empty, the middle mouse button can be used to switch between manual and
+automatic mode. Manual mode is indicated in the title bar.
 
 Indication of "manual mode" does not work on WASM as of yet.
 
