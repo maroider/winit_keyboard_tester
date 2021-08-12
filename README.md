@@ -45,4 +45,6 @@ automatic mode. Manual mode is indicated in the title bar.
 
 Indication of "manual mode" does not work on WASM as of yet.
 
+You can reset dead key sequences on Windows and Linux by pressing the right mouse button.
+
 [#753]: https://github.com/rust-windowing/winit/issues/753

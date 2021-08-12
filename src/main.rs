@@ -263,37 +263,49 @@ fn main() {
                 event:
                     WindowEvent::MouseInput {
                         state: ElementState::Pressed,
-                        button: MouseButton::Middle,
+                        button,
                         ..
                     },
                 ..
-            } => {
-                if manual_mode {
-                    if event_number == 0 {
-                        manual_mode = false;
-                        // TODO: Move this elsewhere?
-                        optional_gl.window().set_title(base_window_title);
+            } => match button {
+                MouseButton::Middle => {
+                    if manual_mode {
+                        if event_number == 0 {
+                            manual_mode = false;
+                            // TODO: Move this elsewhere?
+                            optional_gl.window().set_title(base_window_title);
+                        } else {
+                            table_printer.begin_new_table(&table);
+                            event_number = 0;
+                            pressed_count = 0;
+                            raw_keys_pressed.clear();
+                            repeated_keys.clear();
+                            modifiers = Default::default();
+                        }
                     } else {
-                        table_printer.begin_new_table(&table);
-                        event_number = 0;
-                        pressed_count = 0;
-                        raw_keys_pressed.clear();
-                        repeated_keys.clear();
-                        modifiers = Default::default();
-                    }
-                } else {
-                    if event_number == 0 {
-                        manual_mode = true;
-                        // TODO: Move this elsewhere?
-                        optional_gl
-                            .window()
-                            .set_title(&format!("{} - Manual Mode", base_window_title));
-                    } else {
-                        pressed_count = 0;
-                        modifiers = Default::default();
+                        if event_number == 0 {
+                            manual_mode = true;
+                            // TODO: Move this elsewhere?
+                            optional_gl
+                                .window()
+                                .set_title(&format!("{} - Manual Mode", base_window_title));
+                        } else {
+                            pressed_count = 0;
+                            modifiers = Default::default();
+                        }
                     }
                 }
-            }
+                MouseButton::Right => {
+                    optional_gl.window().reset_dead_keys();
+                    table
+                        .print_table_line()
+                        .column(column::NUMBER, event_number)
+                        .column(column::KIND, "DeadRST")
+                        .print(&mut table_printer);
+                    event_number += 1;
+                }
+                _ => {}
+            },
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
