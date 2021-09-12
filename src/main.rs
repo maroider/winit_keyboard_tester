@@ -360,8 +360,11 @@ fn native_key_code_to_string(native_key_code: &NativeKeyCode) -> String {
         winit::keyboard::NativeKeyCode::MacOS(keycode) => {
             format!("MacOS({:#X})", keycode)
         }
-        winit::keyboard::NativeKeyCode::XKB(keycode) => {
+        winit::keyboard::NativeKeyCode::XkbCode(keycode) => {
             format!("XKB({:#X})", keycode)
+        }
+        winit::keyboard::NativeKeyCode::XkbSym(keysym) => {
+            format!("XKB({:#X})", keysym)
         }
         #[cfg(target_arch = "wasm32")]
         winit::keyboard::NativeKeyCode::Web(keycode) => format!("Web({:?})", keycode),
