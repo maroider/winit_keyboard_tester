@@ -5,20 +5,14 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.14"
+softbuffer = "0.2.0"
 takeable-option = "0.4"
-winit = { path = "../winit" }
+winit = { path = "../winit", default-features = false, features = ["x11"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-glutin = "0.28.0"
-glow = "0.8.1"
-pico-args = "0.4.1"
 simple_logger = "1.11.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log = "0.2.0"
 wasm-bindgen = "0.2.74"
 web-sys = "0.3.49"
-
-# This is neccessary so that Glutin doesn't pull in an incompatible version of Winit
-[patch.crates-io]
-winit = { path = "../winit" }

@@ -1,16 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, iter};
 
+use softbuffer::GraphicsContext;
 use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, Ime, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, KeyCode, ModifiersState, NativeKeyCode},
-    window::{Window, WindowBuilder},
+    keyboard::{Key, KeyCode, ModifiersState},
+    window::WindowBuilder,
 };
-
-#[cfg(not(target_arch = "wasm32"))]
-use glow::HasContext;
-#[cfg(not(target_arch = "wasm32"))]
-use glutin::{ContextBuilder, ContextWrapper, PossiblyCurrent};
 
 #[allow(dead_code)]
 mod column {
@@ -46,22 +42,12 @@ fn main() {
     let event_loop = EventLoop::new();
 
     let base_window_title = "A fantastic window!";
-    let window_builder = WindowBuilder::new()
+    let window = WindowBuilder::new()
         .with_title(base_window_title)
-        .with_resizable(false);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let enable_gl = {
-        let mut pargs = pico_args::Arguments::from_env();
-        pargs
-            .free_from_fn::<_, std::convert::Infallible>(|arg| {
-                Ok(if arg == "--enable-gl" { true } else { false })
-            })
-            .unwrap_or(false)
-    };
-    #[cfg(target_arch = "wasm32")]
-    let enable_gl = false;
-    let optional_gl = OptionalGl::new(enable_gl, window_builder, &event_loop);
+        .with_resizable(false)
+        .build(&event_loop)
+        .unwrap();
+    let mut graphics_context = unsafe { GraphicsContext::new(&window, &window) }.unwrap();
 
     #[rustfmt::skip]
     let table = {
@@ -114,6 +100,12 @@ fn main() {
 
     table_printer.begin_new_table(&table);
 
+    let mut size = window.inner_size();
+    let mut screen_buf: Vec<u32> = iter::repeat(u32::MAX)
+        .take(size.width as usize * size.height as usize)
+        .collect();
+    window.set_resizable(true);
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -151,7 +143,11 @@ fn main() {
                     .column_with(column::KEY, || key_to_string(&event.logical_key))
                     .column_with(column::LOCATION, || format!("{:?}", event.location))
                     .column_with(column::TEXT, || {
-                        event.text.map(nice_text).unwrap_or_else(|| "".to_string())
+                        event
+                            .text
+                            .as_ref()
+                            .map(nice_text)
+                            .unwrap_or_else(|| "".to_string())
                     })
                     .column_with(column::KEY_NO_MOD, || key_without_modifiers(&event))
                     .column_with(column::TEXT_ALL_MODS, || text_with_all_modifiers(&event));
@@ -247,15 +243,31 @@ fn main() {
                 }
             }
             Event::WindowEvent {
-                event: WindowEvent::ReceivedImeText(text),
+                event: WindowEvent::Ime(ime),
                 ..
             } => {
-                table
+                // TODO: Print this in a better way...
+                let mut row = table
                     .print_table_line()
                     .column(column::NUMBER, event_number)
                     .column(column::KIND, "IME")
-                    .column_with(column::TEXT, || format!("{:?}", text))
-                    .print(&mut table_printer);
+                    .column(
+                        column::STATE,
+                        match ime {
+                            Ime::Enabled => "Enabled",
+                            Ime::Preedit(_, _) => "Preedit",
+                            Ime::Commit(_) => "Commit",
+                            Ime::Disabled => "Disabled",
+                        },
+                    );
+                match ime {
+                    // TODO: Print preedit position?
+                    Ime::Preedit(text, _) | Ime::Commit(text) => {
+                        row = row.column_with(column::TEXT, || format!("{:?}", text));
+                    }
+                    Ime::Enabled | Ime::Disabled => {}
+                }
+                row.print(&mut table_printer);
 
                 event_number += 1;
             }
@@ -273,7 +285,7 @@ fn main() {
                         if event_number == 0 {
                             manual_mode = false;
                             // TODO: Move this elsewhere?
-                            optional_gl.window().set_title(base_window_title);
+                            window.set_title(base_window_title);
                         } else {
                             table_printer.begin_new_table(&table);
                             event_number = 0;
@@ -286,9 +298,7 @@ fn main() {
                         if event_number == 0 {
                             manual_mode = true;
                             // TODO: Move this elsewhere?
-                            optional_gl
-                                .window()
-                                .set_title(&format!("{} - Manual Mode", base_window_title));
+                            window.set_title(&format!("{} - Manual Mode", base_window_title));
                         } else {
                             pressed_count = 0;
                             modifiers = Default::default();
@@ -296,7 +306,7 @@ fn main() {
                     }
                 }
                 MouseButton::Right => {
-                    optional_gl.window().reset_dead_keys();
+                    window.reset_dead_keys();
                     table
                         .print_table_line()
                         .column(column::NUMBER, event_number)
@@ -307,6 +317,14 @@ fn main() {
                 _ => {}
             },
             Event::WindowEvent {
+                event: WindowEvent::Resized(new_size),
+                ..
+            } => {
+                let new_area = new_size.width as usize * new_size.height as usize;
+                screen_buf.resize_with(new_area, || u32::MAX);
+                size = new_size;
+            }
+            Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
@@ -315,9 +333,12 @@ fn main() {
                 }
             }
             Event::RedrawRequested(_) => {
-                optional_gl.redraw();
+                graphics_context.set_buffer(
+                    &screen_buf,
+                    size.width.min(u16::MAX.into()) as u16,
+                    size.height.min(u16::MAX.into()) as u16,
+                );
             }
-            Event::LoopDestroyed => optional_gl.cleanup(),
             _ => (),
         }
 
@@ -334,41 +355,15 @@ fn main() {
 
 fn key_to_string(key: &Key) -> String {
     match key {
-        Key::Unidentified(native_key_code) => format!(
-            "Unidentified({})",
-            native_key_code_to_string(native_key_code)
-        ),
+        Key::Unidentified(native_key) => format!("Unidentified({:?})", native_key),
         _ => format!("{:?}", key),
     }
 }
 
 fn key_code_to_string(code: &KeyCode) -> String {
     match code {
-        KeyCode::Unidentified(native_key_code) => format!(
-            "Unidentified({})",
-            native_key_code_to_string(native_key_code)
-        ),
+        KeyCode::Unidentified(native_key_code) => format!("Unidentified({:?})", native_key_code),
         _ => format!("{:?}", code),
-    }
-}
-
-fn native_key_code_to_string(native_key_code: &NativeKeyCode) -> String {
-    match native_key_code {
-        winit::keyboard::NativeKeyCode::Windows(scancode) => {
-            format!("Windows({:#X})", *scancode as u32)
-        }
-        winit::keyboard::NativeKeyCode::MacOS(keycode) => {
-            format!("MacOS({:#X})", keycode)
-        }
-        winit::keyboard::NativeKeyCode::XkbCode(keycode) => {
-            format!("XKB({:#X})", keycode)
-        }
-        winit::keyboard::NativeKeyCode::XkbSym(keysym) => {
-            format!("XKB({:#X})", keysym)
-        }
-        #[cfg(target_arch = "wasm32")]
-        winit::keyboard::NativeKeyCode::Web(keycode) => format!("Web({:?})", keycode),
-        winit::keyboard::NativeKeyCode::Unidentified => "Unidentified".to_string(),
     }
 }
 
@@ -397,7 +392,11 @@ fn text_with_all_modifiers(_: &KeyEvent) -> &'static str {
     ""
 }
 
-fn nice_text(text: &str) -> String {
+fn nice_text<S>(text: S) -> String
+where
+    S: AsRef<str>,
+{
+    let text = text.as_ref();
     if text.chars().any(|c| c.is_control() || c.is_whitespace()) {
         format!("{:?}", text)
     } else {
@@ -794,157 +793,5 @@ impl IoWriteTablePrinter {
         write!(out, "|").unwrap();
 
         out.flush().unwrap();
-    }
-}
-
-enum WindowLike {
-    Normal(Window),
-    #[cfg(not(target_arch = "wasm32"))]
-    Glutin(ContextWrapper<PossiblyCurrent, Window>),
-}
-
-impl WindowLike {
-    fn as_window(&self) -> &Window {
-        match self {
-            Self::Normal(window) => window,
-            #[cfg(not(target_arch = "wasm32"))]
-            Self::Glutin(wc) => wc.window(),
-        }
-    }
-}
-
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-struct OptionalGl {
-    window: WindowLike,
-    #[cfg(not(target_arch = "wasm32"))]
-    gl: Option<glow::Context>,
-    program: u32,
-    vertex_array: u32,
-}
-
-#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
-impl OptionalGl {
-    fn new(enable: bool, window_builder: WindowBuilder, event_loop: &EventLoop<()>) -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
-        if enable {
-            let windowed_context = ContextBuilder::new()
-                .build_windowed(window_builder, event_loop)
-                .unwrap();
-            let windowed_context = unsafe { windowed_context.make_current().unwrap() };
-            let (gl, program, vertex_array) = unsafe {
-                let gl = glow::Context::from_loader_function(|s| {
-                    windowed_context.get_proc_address(s) as *const _
-                });
-
-                let vertex_array = gl
-                    .create_vertex_array()
-                    .expect("Cannot create vertex array");
-                gl.bind_vertex_array(Some(vertex_array));
-
-                let program = gl.create_program().expect("Cannot create program");
-
-                let (vertex_shader_source, fragment_shader_source) = (
-                    r#"const vec2 verts[3] = vec2[3](
-                vec2(0.5f, 1.0f),
-                vec2(0.0f, 0.0f),
-                vec2(1.0f, 0.0f)
-            );
-            out vec2 vert;
-            void main() {
-                vert = verts[gl_VertexID];
-                gl_Position = vec4(vert - 0.5, 0.0, 1.0);
-            }"#,
-                    r#"precision mediump float;
-            in vec2 vert;
-            out vec4 color;
-            void main() {
-                color = vec4(vert, 0.5, 1.0);
-            }"#,
-                );
-
-                let shader_sources = [
-                    (glow::VERTEX_SHADER, vertex_shader_source),
-                    (glow::FRAGMENT_SHADER, fragment_shader_source),
-                ];
-
-                let mut shaders = Vec::with_capacity(shader_sources.len());
-
-                for (shader_type, shader_source) in shader_sources.iter() {
-                    let shader = gl
-                        .create_shader(*shader_type)
-                        .expect("Cannot create shader");
-                    gl.shader_source(shader, &format!("{}\n{}", "#version 410", shader_source));
-                    gl.compile_shader(shader);
-                    if !gl.get_shader_compile_status(shader) {
-                        std::panic::panic_any(gl.get_shader_info_log(shader));
-                    }
-                    gl.attach_shader(program, shader);
-                    shaders.push(shader);
-                }
-
-                gl.link_program(program);
-                if !gl.get_program_link_status(program) {
-                    std::panic::panic_any(gl.get_program_info_log(program));
-                }
-
-                for shader in shaders {
-                    gl.detach_shader(program, shader);
-                    gl.delete_shader(shader);
-                }
-
-                gl.use_program(Some(program));
-                gl.clear_color(0.1, 0.2, 0.3, 1.0);
-
-                (gl, program, vertex_array)
-            };
-            Self {
-                window: WindowLike::Glutin(windowed_context),
-                #[cfg(not(target_arch = "wasm32"))]
-                gl: Some(gl),
-                program,
-                vertex_array,
-            }
-        } else {
-            Self {
-                window: WindowLike::Normal(window_builder.build(&event_loop).unwrap()),
-                #[cfg(not(target_arch = "wasm32"))]
-                gl: None,
-                program: 0,
-                vertex_array: 0,
-            }
-        }
-        #[cfg(target_arch = "wasm32")]
-        Self {
-            window: WindowLike::Normal(window_builder.build(&event_loop).unwrap()),
-            program: 0,
-            vertex_array: 0,
-        }
-    }
-
-    fn redraw(&self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(gl) = self.gl.as_ref() {
-            unsafe {
-                gl.clear(glow::COLOR_BUFFER_BIT);
-                gl.draw_arrays(glow::TRIANGLES, 0, 3);
-            }
-            if let WindowLike::Glutin(windowed_context) = &self.window {
-                windowed_context.swap_buffers().unwrap();
-            }
-        }
-    }
-
-    fn cleanup(&self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(gl) = self.gl.as_ref() {
-            unsafe {
-                gl.delete_program(self.program);
-                gl.delete_vertex_array(self.vertex_array);
-            }
-        }
-    }
-
-    fn window(&self) -> &Window {
-        self.window.as_window()
     }
 }
