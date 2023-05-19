@@ -38,8 +38,8 @@ You can then use one of the `build-web` scripts.
 ### Use
 
 When all keys have been released, the program should automatically terminate
-the current table and begin a new one. The current table can also be terminated
-by pressing the middle mouse button.
+the current table and begin a new one after a couple of seconds. The current
+table can also be terminated by pressing the middle mouse button.
 
 When the current table is empty, the middle mouse button can be used to switch
 between manual and automatic mode. Manual mode is indicated in the title bar.

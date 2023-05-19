@@ -1,4 +1,8 @@
-use std::{collections::HashMap, iter};
+use std::{
+    collections::HashMap,
+    iter,
+    time::{Duration, Instant},
+};
 
 use softbuffer::GraphicsContext;
 use winit::{
@@ -35,6 +39,8 @@ mod wasm {
         super::main();
     }
 }
+
+const TABLE_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn main() {
     #[cfg(not(target_arch = "wasm32"))]
@@ -100,6 +106,8 @@ fn main() {
 
     table_printer.begin_new_table(&table);
 
+    let mut last_change = Instant::now();
+    let mut skip_timeout = false;
     let mut size = window.inner_size();
     let mut screen_buf: Vec<u32> = iter::repeat(u32::MAX)
         .take(size.width as usize * size.height as usize)
@@ -107,7 +115,8 @@ fn main() {
     window.set_resizable(true);
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        let now = Instant::now();
+        *control_flow = ControlFlow::Poll;
 
         match event {
             Event::WindowEvent {
@@ -124,6 +133,7 @@ fn main() {
                     event_number += 1;
                 }
                 focused = focus;
+                last_change = now;
             }
             Event::WindowEvent {
                 event:
@@ -176,6 +186,8 @@ fn main() {
                         .update(&mut table_printer);
                     *repeat_count += 1;
                 }
+
+                last_change = now;
             }
             Event::DeviceEvent {
                 event: DeviceEvent::Key(event),
@@ -225,6 +237,8 @@ fn main() {
                         event_number += 1;
                     }
                 }
+
+                last_change = now;
             }
             Event::WindowEvent {
                 event: WindowEvent::ModifiersChanged(new_modifiers),
@@ -241,6 +255,8 @@ fn main() {
 
                     event_number += 1;
                 }
+
+                last_change = now;
             }
             Event::WindowEvent {
                 event: WindowEvent::Ime(ime),
@@ -270,6 +286,8 @@ fn main() {
                 row.print(&mut table_printer);
 
                 event_number += 1;
+
+                last_change = now;
             }
             Event::WindowEvent {
                 event:
@@ -301,9 +319,12 @@ fn main() {
                             window.set_title(&format!("{} - Manual Mode", base_window_title));
                         } else {
                             pressed_count = 0;
+                            skip_timeout = true;
                             modifiers = Default::default();
                         }
                     }
+
+                    last_change = now;
                 }
                 MouseButton::Right => {
                     window.reset_dead_keys();
@@ -313,6 +334,8 @@ fn main() {
                         .column(column::KIND, "DeadRST")
                         .print(&mut table_printer);
                     event_number += 1;
+
+                    last_change = now;
                 }
                 _ => {}
             },
@@ -345,8 +368,18 @@ fn main() {
         if !manual_mode {
             if pressed_count == 0 && modifiers.is_empty() {
                 if event_number != 0 {
-                    table_printer.begin_new_table(&table);
-                    event_number = 0;
+                    if last_change + TABLE_TIMEOUT <= now || skip_timeout {
+                        print!("\r{:30}", "");
+                        table_printer.begin_new_table(&table);
+                        event_number = 0;
+                        skip_timeout = false;
+                        *control_flow = ControlFlow::Wait;
+                    } else {
+                        print!(
+                            "\rTable finishes in {}s",
+                            (TABLE_TIMEOUT - now.duration_since(last_change)).as_secs()
+                        );
+                    }
                 }
             }
         }
@@ -565,6 +598,8 @@ impl TablePrinter for StdoutTablePrinter {
             write!(out, "\n").unwrap();
             self.updating = false;
         }
+
+        write!(out, "\r").unwrap();
 
         self.ioprinter.print_row(row, &mut out);
 
