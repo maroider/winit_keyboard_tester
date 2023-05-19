@@ -5,6 +5,7 @@ use std::{
 };
 
 use softbuffer::GraphicsContext;
+use unicode_width::UnicodeWidthStr;
 use winit::{
     event::{DeviceEvent, ElementState, Event, Ime, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -814,16 +815,14 @@ impl IoWriteTablePrinter {
             if !column.enabled {
                 continue;
             }
-            write!(
-                out,
-                "| {:<length$} ",
-                row.column_values
-                    .get(column.header)
-                    .map(AsRef::as_ref)
-                    .unwrap_or(""),
-                length = column.width(),
-            )
-            .unwrap();
+            let content = row
+                .column_values
+                .get(column.header)
+                .map(AsRef::as_ref)
+                .unwrap_or("");
+            let content_width = content.width();
+            let padding = column.width().saturating_sub(content_width);
+            write!(out, "| {content}{:padding$} ", "").unwrap();
         }
         write!(out, "|").unwrap();
 
