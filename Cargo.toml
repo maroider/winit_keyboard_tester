@@ -8,7 +8,7 @@ log = "0.4.14"
 softbuffer = "0.2.0"
 takeable-option = "0.4"
 unicode-width = "0.1.10"
-winit = { path = "../winit", default-features = false, features = ["x11"] }
+winit = { path = "../winit" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 simple_logger = "1.11.0"
